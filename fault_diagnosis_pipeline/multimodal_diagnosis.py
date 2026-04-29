@@ -54,14 +54,14 @@ def calculate_kinematics(rpm, location="DE", contact_angle=0):
     bpfo = (nb / 2.0) * f_r * (1 - bd_pd * cos_alpha)
     bpfi = (nb / 2.0) * f_r * (1 + bd_pd * cos_alpha)
     bsf = (pitch_diameter / (2.0 * ball_diameter)) * f_r * (1 - (bd_pd * cos_alpha)**2)
-    ftf = 0.5 * f_r * (1 - bd_pd * cos_alpha)
+    #ftf = 0.5 * f_r * (1 - bd_pd * cos_alpha)
     
     return {
         "1X": f_r,
         "BPFO": bpfo,
         "BPFI": bpfi,
         "BSF": bsf,
-        "FTF": ftf
+        #"FTF": ftf
     }
 
 def plot_time_series(signal, fs=12000, image_path="raw_time_series.png", title="Raw Time Series Signal"):
@@ -76,6 +76,34 @@ def plot_time_series(signal, fs=12000, image_path="raw_time_series.png", title="
     plt.yticks([])
     plt.tight_layout()
     plt.savefig(image_path)
+    plt.close()
+
+def plot_master_envelope(xf, magnitude, kinematics, image_path, title):
+    """
+    Creates a high-fidelity 0-500Hz master diagnostic overview plot with all fault markers.
+    """
+    plt.figure(figsize=(15, 6))
+    plt.plot(xf, magnitude, color="teal", linewidth=1.2, label="Envelope Magnitude", zorder=5)
+    
+    # Fault Marker Configuration
+    markers = [
+        ("1X", "blue", kinematics["1X"]),
+        ("BPFO", "red", kinematics["BPFO"]),
+        ("BPFI", "green", kinematics["BPFI"]),
+        ("BSF", "orange", kinematics["BSF"]),
+    ]
+    
+    for label, color, freq in markers:
+        plt.axvline(x=freq, color=color, linestyle="--", alpha=0.7, linewidth=2.0, label=f"{label} ({freq:.1f} Hz)", zorder=1)
+    
+    plt.title(title, fontsize=16)
+    plt.xlabel("Frequency (Hz)", fontsize=12)
+    plt.ylabel("Magnitude", fontsize=12)
+    plt.xlim(0, 500)
+    plt.legend(loc="upper right", frameon=True, shadow=True)
+    plt.grid(True, which='both', linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.savefig(image_path, bbox_inches='tight')
     plt.close()
 
 # 2. Phase 1, 2, 3: Envelope Analysis & Image Generation (Programmatic)
@@ -107,7 +135,7 @@ def run_envelope_analysis(signal, fs, fault_freqs, target_fault=None, image_path
     global_max = np.max(magnitude) if len(magnitude) > 0 else 1.0
     ylim_upper = global_max * 1.1
     
-    # Plotting
+    # Plotting harmonic zooms if target_fault is provided
     if target_fault and target_fault in fault_freqs:
         base_freq = fault_freqs[target_fault]
         true_freq = base_freq
@@ -128,8 +156,8 @@ def run_envelope_analysis(signal, fs, fault_freqs, target_fault=None, image_path
             idx_range = (xf >= max(0, target_x - zoom_margin)) & (xf <= target_x + zoom_margin)
             
             if np.any(idx_range):
-                ax.plot(xf[idx_range], magnitude[idx_range], color="teal", linewidth=2.5)
-            ax.axvline(x=target_x, color="red", linestyle="--", alpha=1.0, linewidth=3.5)
+                ax.plot(xf[idx_range], magnitude[idx_range], color="teal", linewidth=2.5, zorder=2)
+            ax.axvline(x=target_x, color="red", linestyle="--", alpha=1.0, linewidth=3.5, zorder=1)
             ax.set_ylim(0, ylim_upper)
             ax.set_xticks([])
             ax.set_yticks([])
@@ -344,6 +372,18 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, phase_1_only=Fal
     threshold = 3
     
     print("\n=== EXECUTING PHASE 1: SQUARED ENVELOPE SWEEP ===")
+    
+    # Compute magnitude for Phase 1 Master Plot
+    sig_detrend = detrend(sig_test)
+    analytic_signal = hilbert(sig_detrend)
+    amplitude_envelope = np.abs(analytic_signal)
+    sq_env = amplitude_envelope**2
+    N_1 = len(sq_env)
+    yf_1 = rfft(sq_env - np.mean(sq_env))
+    xf_1 = rfftfreq(N_1, 1/fs)
+    mag_1 = np.abs(yf_1) / (N_1/2)
+    plot_master_envelope(xf_1, mag_1, kinematics, "ph1_master_overview.png", "Phase 1: Master Envelope Overview (0-500Hz)")
+    
     ph1_scores = {}
     ph1_diags = {}
     for target_fault, formal_name in fault_order:
@@ -375,6 +415,18 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, phase_1_only=Fal
         return f"{','.join(tied_ph1)}:::[Phase 1] Tied elements threshold cleared."
             
     print(f"\n*** Phase 1 max score was {best_ph1_max}/3 for {','.join(tied_ph1)} (threshold {threshold}). Escalating to PHASE 2 (CEPSTRUM PREWHITENING) ***")
+    
+    # Compute magnitude for Phase 2 Master Plot
+    sig_detrend_c = detrend(sig_test_cpw)
+    analytic_signal_c = hilbert(sig_detrend_c)
+    amp_env_c = np.abs(analytic_signal_c)
+    sq_env_c = amp_env_c**2
+    N_2 = len(sq_env_c)
+    yf_2 = rfft(sq_env_c - np.mean(sq_env_c))
+    xf_2 = rfftfreq(N_2, 1/fs)
+    mag_2 = np.abs(yf_2) / (N_2/2)
+    plot_master_envelope(xf_2, mag_2, kinematics, "ph2_master_overview.png", "Phase 2: Master CPW Envelope Overview (0-500Hz)")
+    
     ph2_scores = {}
     ph2_diags = {}
     for target_fault, formal_name in fault_order:
@@ -399,6 +451,18 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, phase_1_only=Fal
         return f"{','.join(tied_ph2)}:::[Phase 2] Tied elements threshold cleared."
             
     print(f"\n*** Phase 2 max score was {best_ph2_max}/3 for {','.join(tied_ph2)} (threshold {threshold}). Escalating to PHASE 3 (SPECTRAL KURTOSIS) ***")
+    
+    # Compute magnitude for Phase 3 Master Plot
+    sig_detrend_s = detrend(sig_test_sk)
+    analytic_signal_s = hilbert(sig_detrend_s)
+    amp_env_s = np.abs(analytic_signal_s)
+    sq_env_s = amp_env_s**2
+    N_3 = len(sq_env_s)
+    yf_3 = rfft(sq_env_s - np.mean(sq_env_s))
+    xf_3 = rfftfreq(N_3, 1/fs)
+    mag_3 = np.abs(yf_3) / (N_3/2)
+    plot_master_envelope(xf_3, mag_3, kinematics, "ph3_master_overview.png", "Phase 3: Master SK Envelope Overview (0-500Hz)")
+    
     ph3_scores = {}
     ph3_diags = {}
     for target_fault, formal_name in fault_order:
@@ -438,7 +502,7 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, phase_1_only=Fal
 
 if __name__ == "__main__":
     import sys
-    target_mat_file_test = "../data/CWRU/RAW/12k_DE_IR_021_3.mat"
+    target_mat_file_test = "../data/CWRU/RAW/12k_DE_IR_014_1.mat"
     phase_1_only = "--phase1" in sys.argv
     try:
         final_diagnosis = run_full_diagnosis_pipeline(target_mat_file_test, location="DE", phase_1_only=phase_1_only)

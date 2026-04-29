@@ -1,11 +1,11 @@
 file,truth,predicted,raw_diag_snippet
-normal_0.mat (DE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was -1/3.
+normal_0.mat (DE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was -2/3.
 normal_0.mat (FE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 1/3.
 normal_1.mat (DE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 1/3.
-normal_1.mat (FE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 0/3.
-normal_2.mat (DE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was -1/3.
-normal_2.mat (FE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 0/3.
-normal_3.mat (DE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 1/3.
+normal_1.mat (FE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was -1/3.
+normal_2.mat (DE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 0/3.
+normal_2.mat (FE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was -1/3.
+normal_3.mat (DE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 0/3.
 normal_3.mat (FE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 1/3.
 12k_DE_IR_021_0.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_DE_IR_021_1.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
@@ -13,7 +13,7 @@ normal_3.mat (FE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in 
 12k_DE_IR_021_3.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_DE_OR-C_007_0.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_DE_OR-C_007_1.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
-12k_DE_OR-C_007_2.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
+12k_DE_OR-C_007_2.mat,OUTER_RACE,"BALL,OUTER_RACE","BALL,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3."
 12k_DE_OR-C_007_3.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_DE_OR-OR_007_0.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_DE_OR-OR_007_1.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
@@ -27,16 +27,16 @@ normal_3.mat (FE Eval),HEALTHY,HEALTHY,HEALTHY:::No significant faults found in 
 12k_FE_IR_007_2.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_FE_IR_007_3.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_FE_IR_014_0.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
-12k_FE_IR_014_1.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
-12k_FE_IR_014_2.mat,INNER_RACE,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 1/3.
-12k_FE_IR_014_3.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
+12k_FE_IR_014_1.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 2/3.
+12k_FE_IR_014_2.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 2/3.
+12k_FE_IR_014_3.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 2/3.
 12k_FE_IR_021_1.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_FE_IR_021_2.mat,INNER_RACE,INNER_RACE,INNER_RACE:::[Phase 1 Only] Peak score: 3/3.
-12k_FE_IR_021_3.mat,INNER_RACE,"BALL,INNER_RACE","BALL,INNER_RACE:::[Phase 1 Only] Peak score: 2/3."
+12k_FE_IR_021_3.mat,INNER_RACE,HEALTHY,HEALTHY:::No significant faults found in Phase 1. Peak score was 1/3.
 12k_FE_OR-C_014_0.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_FE_OR-C_021_0.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
 12k_FE_OR-OR_014_0.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 2/3.
-12k_FE_OR-OR_014_1.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
-12k_FE_OR-OR_014_2.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 2/3.
-12k_FE_OR-OR_014_3.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
-12k_FE_OR-OR_021_2.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 2/3.
+12k_FE_OR-OR_014_1.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 2/3.
+12k_FE_OR-OR_014_2.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
+12k_FE_OR-OR_014_3.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 2/3.
+12k_FE_OR-OR_021_2.mat,OUTER_RACE,OUTER_RACE,OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.
