@@ -12,6 +12,7 @@ pandas = "*"
 pyarrow = "*"
 fastparquet = "*"
 requests = "*"
+patool = "*"
 
 [dev-packages]
 

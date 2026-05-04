@@ -1,0 +1,4 @@
+Predicted: HEALTHY
+
+Raw Output:
+HEALTHY:::No significant faults found in Phase 3. Peak score was 1/3.

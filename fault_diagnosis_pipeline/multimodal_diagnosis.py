@@ -20,7 +20,6 @@ def load_mat_file(filepath):
     signal = data[de_key].flatten()
     return signal
 
-import numpy as np
 
 def calculate_kinematics(rpm, location="DE", contact_angle=0):
     """
@@ -43,6 +42,11 @@ def calculate_kinematics(rpm, location="DE", contact_angle=0):
         # SKF 6203-2RS JEM (Fan End)
         pitch_diameter = 1.122
         ball_diameter = 0.2656
+        nb = 8
+    elif location == "PU":
+        # Paderborn PU Bearing Geometry (SKF 6203-l1)
+        pitch_diameter = 29.05
+        ball_diameter = 6.75
         nb = 8
     else:
         raise ValueError("Location must be 'DE' or 'FE'")
@@ -145,8 +149,20 @@ def run_envelope_analysis(signal, fs, fault_freqs, target_fault=None, image_path
                 # Drift Correction: Snap fundamental frequency onto local maximum peak inside +-2Hz window
                 search_mask = (xf >= max(0, base_freq - 2.0)) & (xf <= base_freq + 2.0)
                 if np.any(search_mask):
-                    peak_idx = np.argmax(magnitude[search_mask])
-                    true_freq = xf[search_mask][peak_idx]
+                    local_xf = xf[search_mask]
+                    local_mag = magnitude[search_mask]
+                    
+                    # Use find_peaks with a dynamic prominence threshold (e.g., 1.5x the local median noise)
+                    local_median = np.median(local_mag)
+                    peaks, properties = find_peaks(local_mag, prominence=local_median * 1.5)
+                    
+                    if len(peaks) > 0:
+                        # If multiple peaks are found, grab the index of the one with the HIGHEST PROMINENCE
+                        best_peak_idx = peaks[np.argmax(properties["prominences"])]
+                        true_freq = local_xf[best_peak_idx]
+                    else:
+                        # Fallback to argmax ONLY if no structured peaks meet the prominence criteria
+                        true_freq = local_xf[np.argmax(local_mag)]
             
             target_x = true_freq * h
             fig, ax = plt.subplots(figsize=(6, 4))
@@ -290,7 +306,7 @@ def evaluate_single_harmonic_with_llm(b64_image, image_filename, numerical_conte
     except Exception as e:
         return f"Error connecting to Ollama check if server is running: {e}"
 
-def run_full_diagnosis_pipeline(target_mat_file, location=None, phase_1_only=False):
+def run_full_diagnosis_pipeline(target_mat_file, location=None, target_phase=None, measurement_index=0, output_dir="."):
     """
     Executes the complete multi-modal sequential specific fault isolation pipeline.
     Returns the mapped string fault output concatenated with the diagnosis reasoning.
@@ -299,54 +315,71 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, phase_1_only=Fal
         raise FileNotFoundError(f"Dataset file {target_mat_file} not found.")
         
     print(f"Loading data from {target_mat_file}...")
-    sig_test = load_mat_file(target_mat_file)
     
-    fs = 12000
-    
-    # Calculate Dynamic RPM based on Motor Load (HP) digit in filename
-    basename = os.path.basename(target_mat_file).replace('.mat', '')
-    try:
-        hp = int(basename.split('_')[-1])
-        hp_map = {0: 1797, 1: 1772, 2: 1750, 3: 1730}
-        theoretical_rpm = hp_map.get(hp, 1797)
-    except ValueError:
-        theoretical_rpm = 1797
+    if target_mat_file.endswith('.parquet'):
+        import pandas as pd
+        df = pd.read_parquet(target_mat_file)
+        #row = df.iloc[measurement_index]
+        row = df.iloc[measurement_index]
+        df_filtered = df[(df["nominal_speed"] == 900)]
+        row = df_filtered.iloc[0]
+        sig_test = row['vibration']
+        fs = 64000  # Paderborn dataset sampling frequency
+        rpm = float(row['speed'].mean())
+        theoretical_rpm = float(row['nominal_speed'])
+        basename = os.path.basename(target_mat_file).replace('.parquet', '')
         
-    # # Find True RPM via Raw FFT peak hunting near theoretical 1X (running speed)
-    # theoretical_1x = theoretical_rpm / 60.0
-    # N = len(sig_test)
-    # raw_yf = rfft(sig_test - np.mean(sig_test))
-    # raw_xf = rfftfreq(N, 1/fs)
-    # raw_mag = np.abs(raw_yf) / (N/2)
-    
-    # search_mask = (raw_xf >= max(0, theoretical_1x - 5.0)) & (raw_xf <= theoretical_1x + 5.0)
-    # if np.any(search_mask):
-    #     peak_idx = np.argmax(raw_mag[search_mask])
-    #     true_1x = raw_xf[search_mask][peak_idx]
-    #     rpm = true_1x * 60.0
-        
-        # Diagnostic Plotting of the True RPM extraction
-        plt.figure(figsize=(8, 4))
-        plt.plot(raw_xf[search_mask], raw_mag[search_mask], color="teal", linewidth=2.0)
-        plt.axvline(x=theoretical_1x, color="red", linestyle="--", label=f"Theoretical 1X ({theoretical_1x:.2f} Hz)", linewidth=2.0)
-        plt.axvline(x=true_1x, color="blue", linestyle="-", label=f"True 1X Peak ({true_1x:.2f} Hz)", linewidth=2.0)
-        plt.title(f"True RPM Extraction (Nominal RPM: {theoretical_rpm})")
-        plt.xlabel("Frequency (Hz)")
-        plt.ylabel("FFT Magnitude")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig("rpm_extraction_diagnostic.png")
-        plt.close()
-        
+        if location is None:
+            location = "PU"
+            
     else:
-        rpm = theoretical_rpm
+        sig_test = load_mat_file(target_mat_file)
+        fs = 12000
         
-    if location is None:
-        if "FE" in basename.upper():
-            location = "FE"
+        # Calculate Dynamic RPM based on Motor Load (HP) digit in filename
+        basename = os.path.basename(target_mat_file).replace('.mat', '')
+        try:
+            hp = int(basename.split('_')[-1])
+            hp_map = {0: 1797, 1: 1772, 2: 1750, 3: 1730}
+            theoretical_rpm = hp_map.get(hp, 1797)
+        except ValueError:
+            theoretical_rpm = 1797
+            
+        # # Find True RPM via Raw FFT peak hunting near theoretical 1X (running speed)
+        # theoretical_1x = theoretical_rpm / 60.0
+        # N = len(sig_test)
+        # raw_yf = rfft(sig_test - np.mean(sig_test))
+        # raw_xf = rfftfreq(N, 1/fs)
+        # raw_mag = np.abs(raw_yf) / (N/2)
+        
+        # search_mask = (raw_xf >= max(0, theoretical_1x - 5.0)) & (raw_xf <= theoretical_1x + 5.0)
+        # if np.any(search_mask):
+        #     peak_idx = np.argmax(raw_mag[search_mask])
+        #     true_1x = raw_xf[search_mask][peak_idx]
+        #     rpm = true_1x * 60.0
+            
+            # Diagnostic Plotting of the True RPM extraction
+            plt.figure(figsize=(8, 4))
+            plt.plot(raw_xf[search_mask], raw_mag[search_mask], color="teal", linewidth=2.0)
+            plt.axvline(x=theoretical_1x, color="red", linestyle="--", label=f"Theoretical 1X ({theoretical_1x:.2f} Hz)", linewidth=2.0)
+            plt.axvline(x=true_1x, color="blue", linestyle="-", label=f"True 1X Peak ({true_1x:.2f} Hz)", linewidth=2.0)
+            plt.title(f"True RPM Extraction (Nominal RPM: {theoretical_rpm})")
+            plt.xlabel("Frequency (Hz)")
+            plt.ylabel("FFT Magnitude")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, "rpm_extraction_diagnostic.png"))
+            plt.close()
+            
         else:
-            location = "DE"
+            rpm = theoretical_rpm
+            
+        if location is None:
+            if "FE" in basename.upper():
+                location = "FE"
+            else:
+                location = "DE"
             
     print(f"Detected Motor Load => Extracted True RPM: {rpm:.1f} (Theoretical nominal: {theoretical_rpm}, Location: {location})")
     kinematics = calculate_kinematics(rpm=rpm, location=location)
@@ -357,11 +390,11 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, phase_1_only=Fal
     sos_hp = butter(4, cutoff / nyq, btype='highpass', output='sos')
     sig_test = sosfiltfilt(sos_hp, sig_test)
     
-    plot_time_series(sig_test, fs, image_path="raw_time_series.png", title="High-Pass Filtered Time Series")
+    plot_time_series(sig_test, fs, image_path=os.path.join(output_dir, "raw_time_series.png"), title="High-Pass Filtered Time Series")
     
     print("Pre-computing Advanced Signals (CPW, SK)...")
     sig_test_cpw = run_cepstrum_prewhitening(sig_test)
-    sig_test_sk, opt_fc_test, sk_path_test = run_spectral_kurtosis_and_filter(sig_test, fs, "sk_test.png")
+    sig_test_sk, opt_fc_test, sk_path_test = run_spectral_kurtosis_and_filter(sig_test, fs, os.path.join(output_dir, "sk_test.png"))
     
     fault_order = [("BSF", "BALL"), ("BPFO", "OUTER_RACE"), ("BPFI", "INNER_RACE")]
     
@@ -371,127 +404,146 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, phase_1_only=Fal
         
     threshold = 3
     
-    print("\n=== EXECUTING PHASE 1: SQUARED ENVELOPE SWEEP ===")
-    
-    # Compute magnitude for Phase 1 Master Plot
-    sig_detrend = detrend(sig_test)
-    analytic_signal = hilbert(sig_detrend)
-    amplitude_envelope = np.abs(analytic_signal)
-    sq_env = amplitude_envelope**2
-    N_1 = len(sq_env)
-    yf_1 = rfft(sq_env - np.mean(sq_env))
-    xf_1 = rfftfreq(N_1, 1/fs)
-    mag_1 = np.abs(yf_1) / (N_1/2)
-    plot_master_envelope(xf_1, mag_1, kinematics, "ph1_master_overview.png", "Phase 1: Master Envelope Overview (0-500Hz)")
-    
-    ph1_scores = {}
-    ph1_diags = {}
-    for target_fault, formal_name in fault_order:
-        b64_imgs, ctx = run_envelope_analysis(sig_test, fs, kinematics, target_fault=target_fault, image_path=f"ph1_{target_fault}.png", phase_title=f"Phase 1: Squared Envelope ({target_fault})")
+    if target_phase in [None, 1]:
+        print("\n=== EXECUTING PHASE 1: SQUARED ENVELOPE SWEEP ===")
         
-        target_score = 0
-        comb_diags = []
-        for b64_img, img_path, harmonic in b64_imgs:
-            diagnosis = evaluate_single_harmonic_with_llm(b64_img, img_path, ctx, target_fault, harmonic, "Phase 1")
-            sub_score = extract_confidence(diagnosis)
-            target_score += sub_score
-            comb_diags.append(f"[{harmonic}X SCORE: {sub_score}]\n{diagnosis}")
-            print(f"--- AI DIAGNOSIS (PHASE 1 / {target_fault} / {harmonic}x) [SCORE: {sub_score}] ---")
-
-        ph1_scores[formal_name] = target_score
-        ph1_diags[formal_name] = "\n".join(comb_diags)
-        print(f"\n========== FINAL DIAGNOSIS (PHASE 1 / {target_fault}) [TOTAL SCORE: {target_score}/3] ==========\n")
+        # Compute magnitude for Phase 1 Master Plot
+        sig_detrend = detrend(sig_test)
+        analytic_signal = hilbert(sig_detrend)
+        amplitude_envelope = np.abs(analytic_signal)
+        sq_env = amplitude_envelope**2
+        N_1 = len(sq_env)
+        yf_1 = rfft(sq_env - np.mean(sq_env))
+        xf_1 = rfftfreq(N_1, 1/fs)
+        mag_1 = np.abs(yf_1) / (N_1/2)
+        plot_master_envelope(xf_1, mag_1, kinematics, os.path.join(output_dir, "ph1_master_overview.png"), "Phase 1: Master Envelope Overview (0-500Hz)")
         
-    best_ph1_max = max(ph1_scores.values())
-    tied_ph1 = [k for k, v in ph1_scores.items() if v == best_ph1_max]
-    
-    if phase_1_only:
-        if best_ph1_max >= 2:
-            return f"{','.join(tied_ph1)}:::[Phase 1 Only] Peak score: {best_ph1_max}/3."
-        else:
-            return f"HEALTHY:::No significant faults found in Phase 1. Peak score was {best_ph1_max}/3."
+        ph1_scores = {}
+        ph1_diags = {}
+        for target_fault, formal_name in fault_order:
+            b64_imgs, ctx = run_envelope_analysis(sig_test, fs, kinematics, target_fault=target_fault, image_path=os.path.join(output_dir, f"ph1_{target_fault}.png"), phase_title=f"Phase 1: Squared Envelope ({target_fault})")
             
-    if best_ph1_max >= threshold:
-        return f"{','.join(tied_ph1)}:::[Phase 1] Tied elements threshold cleared."
-            
-    print(f"\n*** Phase 1 max score was {best_ph1_max}/3 for {','.join(tied_ph1)} (threshold {threshold}). Escalating to PHASE 2 (CEPSTRUM PREWHITENING) ***")
-    
-    # Compute magnitude for Phase 2 Master Plot
-    sig_detrend_c = detrend(sig_test_cpw)
-    analytic_signal_c = hilbert(sig_detrend_c)
-    amp_env_c = np.abs(analytic_signal_c)
-    sq_env_c = amp_env_c**2
-    N_2 = len(sq_env_c)
-    yf_2 = rfft(sq_env_c - np.mean(sq_env_c))
-    xf_2 = rfftfreq(N_2, 1/fs)
-    mag_2 = np.abs(yf_2) / (N_2/2)
-    plot_master_envelope(xf_2, mag_2, kinematics, "ph2_master_overview.png", "Phase 2: Master CPW Envelope Overview (0-500Hz)")
-    
-    ph2_scores = {}
-    ph2_diags = {}
-    for target_fault, formal_name in fault_order:
-        b64_imgs, ctx_c = run_envelope_analysis(sig_test_cpw, fs, kinematics, target_fault=target_fault, image_path=f"ph2_{target_fault}.png", phase_title=f"Phase 2: CPW Envelope ({target_fault})")
-        
-        target_score = 0
-        comb_diags = []
-        for b64_img, img_path, harmonic in b64_imgs:
-            diag_cpw = evaluate_single_harmonic_with_llm(b64_img, img_path, ctx_c, target_fault, harmonic, "Phase 2")
-            sub_score = extract_confidence(diag_cpw)
-            target_score += sub_score
-            comb_diags.append(f"[{harmonic}X SCORE: {sub_score}]\n{diag_cpw}")
-            print(f"--- AI DIAGNOSIS (PHASE 2 / {target_fault} / {harmonic}x) [SCORE: {sub_score}] ---")
+            target_score = 0
+            comb_diags = []
+            for b64_img, img_path, harmonic in b64_imgs:
+                diagnosis = evaluate_single_harmonic_with_llm(b64_img, img_path, ctx, target_fault, harmonic, "Phase 1")
+                sub_score = extract_confidence(diagnosis)
+                target_score += sub_score
+                comb_diags.append(f"[{harmonic}X SCORE: {sub_score}]\n{diagnosis}")
+                print(f"--- AI DIAGNOSIS (PHASE 1 / {target_fault} / {harmonic}x) [SCORE: {sub_score}] ---")
 
-        ph2_scores[formal_name] = target_score
-        ph2_diags[formal_name] = "\n".join(comb_diags)
-        print(f"\n========== FINAL DIAGNOSIS (PHASE 2 / {target_fault}) [TOTAL SCORE: {target_score}/3] ==========\n")
-        
-    best_ph2_max = max(ph2_scores.values())
-    tied_ph2 = [k for k, v in ph2_scores.items() if v == best_ph2_max]
-    if best_ph2_max >= threshold:
-        return f"{','.join(tied_ph2)}:::[Phase 2] Tied elements threshold cleared."
+            ph1_scores[formal_name] = target_score
+            ph1_diags[formal_name] = "\n".join(comb_diags)
+            print(f"\n========== FINAL DIAGNOSIS (PHASE 1 / {target_fault}) [TOTAL SCORE: {target_score}/3] ==========\n")
             
-    print(f"\n*** Phase 2 max score was {best_ph2_max}/3 for {','.join(tied_ph2)} (threshold {threshold}). Escalating to PHASE 3 (SPECTRAL KURTOSIS) ***")
-    
-    # Compute magnitude for Phase 3 Master Plot
-    sig_detrend_s = detrend(sig_test_sk)
-    analytic_signal_s = hilbert(sig_detrend_s)
-    amp_env_s = np.abs(analytic_signal_s)
-    sq_env_s = amp_env_s**2
-    N_3 = len(sq_env_s)
-    yf_3 = rfft(sq_env_s - np.mean(sq_env_s))
-    xf_3 = rfftfreq(N_3, 1/fs)
-    mag_3 = np.abs(yf_3) / (N_3/2)
-    plot_master_envelope(xf_3, mag_3, kinematics, "ph3_master_overview.png", "Phase 3: Master SK Envelope Overview (0-500Hz)")
-    
-    ph3_scores = {}
-    ph3_diags = {}
-    for target_fault, formal_name in fault_order:
-        b64_imgs, ctx_s = run_envelope_analysis(sig_test_sk, fs, kinematics, target_fault=target_fault, image_path=f"ph3_{target_fault}.png", phase_title=f"Phase 3: SK Envelope ({target_fault})")
+        best_ph1_max = max(ph1_scores.values())
+        tied_ph1 = [k for k, v in ph1_scores.items() if v == best_ph1_max]
         
-        target_score = 0
-        comb_diags = []
-        for b64_img, img_path, harmonic in b64_imgs:
-            diag_sk = evaluate_single_harmonic_with_llm(b64_img, img_path, ctx_s, target_fault, harmonic, "Phase 3")
-            sub_score = extract_confidence(diag_sk)
-            target_score += sub_score
-            comb_diags.append(f"[{harmonic}X SCORE: {sub_score}]\n{diag_sk}")
-            print(f"--- AI DIAGNOSIS (PHASE 3 / {target_fault} / {harmonic}x) [SCORE: {sub_score}] ---")
+        if target_phase == 1:
+            if best_ph1_max >= 2:
+                return f"{','.join(tied_ph1)}:::[Phase 1 Only] Peak score: {best_ph1_max}/3."
+            else:
+                return f"HEALTHY:::No significant faults found in Phase 1. Peak score was {best_ph1_max}/3."
+                
+        if best_ph1_max >= threshold:
+            return f"{','.join(tied_ph1)}:::[Phase 1] Tied elements threshold cleared."
+                
+        print(f"\n*** Phase 1 max score was {best_ph1_max}/3 for {','.join(tied_ph1)} (threshold {threshold}). Escalating to PHASE 2 (CEPSTRUM PREWHITENING) ***")
+        
+    if target_phase in [None, 2]:
+        print("\n=== EXECUTING PHASE 2: CEPSTRUM PREWHITENING ===")
+        # Compute magnitude for Phase 2 Master Plot
+        sig_detrend_c = detrend(sig_test_cpw)
+        analytic_signal_c = hilbert(sig_detrend_c)
+        amp_env_c = np.abs(analytic_signal_c)
+        sq_env_c = amp_env_c**2
+        N_2 = len(sq_env_c)
+        yf_2 = rfft(sq_env_c - np.mean(sq_env_c))
+        xf_2 = rfftfreq(N_2, 1/fs)
+        mag_2 = np.abs(yf_2) / (N_2/2)
+        plot_master_envelope(xf_2, mag_2, kinematics, os.path.join(output_dir, "ph2_master_overview.png"), "Phase 2: Master CPW Envelope Overview (0-500Hz)")
+        
+        ph2_scores = {}
+        ph2_diags = {}
+        for target_fault, formal_name in fault_order:
+            b64_imgs, ctx_c = run_envelope_analysis(sig_test_cpw, fs, kinematics, target_fault=target_fault, image_path=os.path.join(output_dir, f"ph2_{target_fault}.png"), phase_title=f"Phase 2: CPW Envelope ({target_fault})")
+            
+            target_score = 0
+            comb_diags = []
+            for b64_img, img_path, harmonic in b64_imgs:
+                diag_cpw = evaluate_single_harmonic_with_llm(b64_img, img_path, ctx_c, target_fault, harmonic, "Phase 2")
+                sub_score = extract_confidence(diag_cpw)
+                target_score += sub_score
+                comb_diags.append(f"[{harmonic}X SCORE: {sub_score}]\n{diag_cpw}")
+                print(f"--- AI DIAGNOSIS (PHASE 2 / {target_fault} / {harmonic}x) [SCORE: {sub_score}] ---")
 
-        ph3_scores[formal_name] = target_score
-        ph3_diags[formal_name] = "\n".join(comb_diags)
-        print(f"\n========== FINAL DIAGNOSIS (PHASE 3 / {target_fault}) [TOTAL SCORE: {target_score}/3] ==========\n")
+            ph2_scores[formal_name] = target_score
+            ph2_diags[formal_name] = "\n".join(comb_diags)
+            print(f"\n========== FINAL DIAGNOSIS (PHASE 2 / {target_fault}) [TOTAL SCORE: {target_score}/3] ==========\n")
+            
+        best_ph2_max = max(ph2_scores.values())
+        tied_ph2 = [k for k, v in ph2_scores.items() if v == best_ph2_max]
         
-    best_ph3_max = max(ph3_scores.values())
-    tied_ph3 = [k for k, v in ph3_scores.items() if v == best_ph3_max]
-    if best_ph3_max >= threshold:
-        return f"{','.join(tied_ph3)}:::[Phase 3] Tied elements threshold cleared."
+        if target_phase == 2:
+            if best_ph2_max >= 2:
+                return f"{','.join(tied_ph2)}:::[Phase 2 Only] Peak score: {best_ph2_max}/3."
+            else:
+                return f"HEALTHY:::No significant faults found in Phase 2. Peak score was {best_ph2_max}/3."
+                
+        if best_ph2_max >= threshold:
+            return f"{','.join(tied_ph2)}:::[Phase 2] Tied elements threshold cleared."
+                
+        print(f"\n*** Phase 2 max score was {best_ph2_max}/3 for {','.join(tied_ph2)} (threshold {threshold}). Escalating to PHASE 3 (SPECTRAL KURTOSIS) ***")
+        
+    if target_phase in [None, 3]:
+        print("\n=== EXECUTING PHASE 3: SPECTRAL KURTOSIS ===")
+        # Compute magnitude for Phase 3 Master Plot
+        sig_detrend_s = detrend(sig_test_sk)
+        analytic_signal_s = hilbert(sig_detrend_s)
+        amp_env_s = np.abs(analytic_signal_s)
+        sq_env_s = amp_env_s**2
+        N_3 = len(sq_env_s)
+        yf_3 = rfft(sq_env_s - np.mean(sq_env_s))
+        xf_3 = rfftfreq(N_3, 1/fs)
+        mag_3 = np.abs(yf_3) / (N_3/2)
+        plot_master_envelope(xf_3, mag_3, kinematics, os.path.join(output_dir, "ph3_master_overview.png"), "Phase 3: Master SK Envelope Overview (0-500Hz)")
+        
+        ph3_scores = {}
+        ph3_diags = {}
+        for target_fault, formal_name in fault_order:
+            b64_imgs, ctx_s = run_envelope_analysis(sig_test_sk, fs, kinematics, target_fault=target_fault, image_path=os.path.join(output_dir, f"ph3_{target_fault}.png"), phase_title=f"Phase 3: SK Envelope ({target_fault})")
+            
+            target_score = 0
+            comb_diags = []
+            for b64_img, img_path, harmonic in b64_imgs:
+                diag_sk = evaluate_single_harmonic_with_llm(b64_img, img_path, ctx_s, target_fault, harmonic, "Phase 3")
+                sub_score = extract_confidence(diag_sk)
+                target_score += sub_score
+                comb_diags.append(f"[{harmonic}X SCORE: {sub_score}]\n{diag_sk}")
+                print(f"--- AI DIAGNOSIS (PHASE 3 / {target_fault} / {harmonic}x) [SCORE: {sub_score}] ---")
+
+            ph3_scores[formal_name] = target_score
+            ph3_diags[formal_name] = "\n".join(comb_diags)
+            print(f"\n========== FINAL DIAGNOSIS (PHASE 3 / {target_fault}) [TOTAL SCORE: {target_score}/3] ==========\n")
+            
+        best_ph3_max = max(ph3_scores.values())
+        tied_ph3 = [k for k, v in ph3_scores.items() if v == best_ph3_max]
+        
+        if target_phase == 3:
+            if best_ph3_max >= 2:
+                return f"{','.join(tied_ph3)}:::[Phase 3 Only] Peak score: {best_ph3_max}/3."
+            else:
+                return f"HEALTHY:::No significant faults found in Phase 3. Peak score was {best_ph3_max}/3."
+                
+        if best_ph3_max >= threshold:
+            return f"{','.join(tied_ph3)}:::[Phase 3] Tied elements threshold cleared."
                     
     all_scores = {
-        **{f"{k} (Ph1)": v for k, v in ph1_scores.items()},
-        **{f"{k} (Ph2)": v for k, v in ph2_scores.items()},
-        **{f"{k} (Ph3)": v for k, v in ph3_scores.items()}
+        **({f"{k} (Ph1)": v for k, v in ph1_scores.items()} if 'ph1_scores' in locals() else {}),
+        **({f"{k} (Ph2)": v for k, v in ph2_scores.items()} if 'ph2_scores' in locals() else {}),
+        **({f"{k} (Ph3)": v for k, v in ph3_scores.items()} if 'ph3_scores' in locals() else {})
     }
-    absolute_best_max = max(all_scores.values())
+    absolute_best_max = max(all_scores.values()) if all_scores else 0
     
     if absolute_best_max >= 2:
         tied_fallbacks = [k.split(" ")[0] for k, v in all_scores.items() if v == absolute_best_max]
@@ -502,10 +554,10 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, phase_1_only=Fal
 
 if __name__ == "__main__":
     import sys
-    target_mat_file_test = "../data/CWRU/RAW/12k_DE_IR_014_1.mat"
-    phase_1_only = "--phase1" in sys.argv
+    target_mat_file_test = "../data/Paderborn/interim/KA03.parquet"
+    target_phase = 1 if "--phase1" in sys.argv else (2 if "--phase2" in sys.argv else (3 if "--phase3" in sys.argv else None))
     try:
-        final_diagnosis = run_full_diagnosis_pipeline(target_mat_file_test, location="DE", phase_1_only=phase_1_only)
+        final_diagnosis = run_full_diagnosis_pipeline(target_mat_file_test, location="PU", target_phase=target_phase, measurement_index=0)
         predicted = parse_llm_diagnosis(final_diagnosis)
         print(f"\n==================================================")
         print(f"FINAL PREDICTED FAULT CLASS: {predicted}")
