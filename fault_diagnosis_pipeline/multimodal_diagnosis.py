@@ -297,7 +297,7 @@ def evaluate_single_harmonic_with_llm(b64_image, image_filename, numerical_conte
     """
     prompt_string = (
         f"- If a massive peak approximately aligns with the red dashed line: 1\n"
-        "- If the peak is clearly misaligned, ambiguous, or just background noise: 0\n"
+        "- If the peak is clearly misaligned, the amplitude is extremely low, or just background noise: 0\n"
         #"- If there is NO peak, or the signal is totally flat near that marker: -1\n"
         #"CRITICAL RULE: Assume NO PEAK by default. Only award 1 if the alignment is exceptionally obvious and undeniable. You must penalize (-1) for missing peaks. Do NOT hallucinate data.\n"
         "Output your final evaluation EXACTLY in this format on the very last line:\n"
@@ -465,7 +465,7 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, target_phase=Non
         tied_ph1 = [k for k, v in ph1_scores.items() if v == best_ph1_max]
         
         if target_phase == 1:
-            if best_ph1_max >= 2:
+            if best_ph1_max >= 3:
                 return f"{','.join(tied_ph1)}:::[Phase 1 Only] Peak score: {best_ph1_max}/3."
             else:
                 return f"HEALTHY:::No significant faults found in Phase 1. Peak score was {best_ph1_max}/3."
