@@ -1,4 +1,4 @@
-Predicted: HEALTHY
+Predicted: INNER_RACE
 
 Raw Output:
-HEALTHY:::No significant faults found in Phase 2. Peak score was 1/3.
+INNER_RACE:::[Phase 1 Only] Peak score: 3/3.

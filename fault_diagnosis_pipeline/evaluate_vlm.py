@@ -5,8 +5,8 @@ import argparse
 from multimodal_diagnosis import run_full_diagnosis_pipeline, parse_llm_diagnosis
 
 def print_confusion_matrix(y_true, y_pred):
-    classes_true = ["HEALTHY", "BALL", "INNER_RACE", "OUTER_RACE"]
-    classes_pred = ["HEALTHY", "BALL", "INNER_RACE", "OUTER_RACE", "UNDIAGNOSABLE"]
+    classes_true = ["HEALTHY", "INNER_RACE", "OUTER_RACE"]
+    classes_pred = ["HEALTHY", "INNER_RACE", "OUTER_RACE"]
     print("\n" + "="*70)
     print("CONFUSION MATRIX (Row=Ground Truth, Col=Predicted)")
     print("="*70)
@@ -44,9 +44,9 @@ def determine_ground_truth(filename):
     basename_no_ext = basename.replace('.parquet', '')
     if basename_no_ext.startswith('k0'):
         return 'HEALTHY'
-    elif basename_no_ext in ['ka01', 'ka03', 'ka05', 'ka06', 'ka07', 'ki01', 'ki03', 'ki05', 'ki07']:
+    elif basename_no_ext.startswith('ka'):
         return 'OUTER_RACE'
-    elif basename_no_ext in ['ka04', 'ka08', 'ka09', 'ki04', 'ki08']:
+    elif basename_no_ext.startswith('ki'):
         return 'INNER_RACE'
         
     return 'UNKNOWN'
@@ -154,7 +154,7 @@ def run_evaluation(filter_file=None, target_phase=None):
                 kwargs = {'target_phase': target_phase, 'output_dir': out_dir}
                 if dataset_type == 'PU':
                     kwargs['location'] = 'PU'
-                    kwargs['measurement_index'] = 0
+                    kwargs['measurement_index'] = 10
                     
                 raw_diag = run_full_diagnosis_pipeline(filepath, **kwargs)
                 predicted = parse_llm_diagnosis(raw_diag)

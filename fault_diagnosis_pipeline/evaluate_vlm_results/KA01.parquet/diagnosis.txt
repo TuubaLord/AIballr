@@ -1,4 +1,4 @@
 Predicted: OUTER_RACE
 
 Raw Output:
-OUTER_RACE:::[Phase 3 Only] Peak score: 3/3.
+OUTER_RACE:::[Phase 1 Only] Peak score: 3/3.

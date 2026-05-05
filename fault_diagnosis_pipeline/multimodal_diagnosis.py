@@ -1,6 +1,6 @@
 import numpy as np
 import scipy.io as sio
-from scipy.signal import hilbert, detrend, stft, butter, sosfiltfilt, find_peaks
+from scipy.signal import hilbert, detrend, stft, butter, sosfiltfilt, find_peaks, decimate
 from scipy.fft import rfft, rfftfreq
 from scipy.stats import kurtosis
 import matplotlib.pyplot as plt
@@ -19,6 +19,26 @@ def load_mat_file(filepath):
         raise ValueError("Could not find 'DE' key in mat file.")
     signal = data[de_key].flatten()
     return signal
+
+
+
+def apply_bandpass(signal, fs, lowcut=2000.0, highcut=10000.0, order=4):
+    nyq = 0.5 * fs
+    # Ensure frequencies are within valid bounds
+    lowcut = max(1.0, lowcut)
+    highcut = min(nyq - 1.0, highcut)
+    
+    # Normalize the frequencies
+    low = lowcut / nyq
+    high = highcut / nyq
+    
+    # Design the filter
+    # btype='band' creates the band-pass logic
+    sos = butter(order, [low, high], btype='band', output='sos')
+    
+    # Apply the filter
+    filtered_sig = sosfiltfilt(sos, signal)
+    return filtered_sig
 
 
 def calculate_kinematics(rpm, location="DE", contact_angle=0):
@@ -263,9 +283,9 @@ def parse_llm_diagnosis(response_text):
         return 'UNDIAGNOSABLE'
     
     fault_type = 'UNKNOWN_FAULT'
-    if 'BALL' in text or 'BSF' in text or 'ROLLING ELEMENT' in text:
-        fault_type = 'BALL'
-    elif 'INNER' in text or 'BPFI' in text or 'IR' in text:
+    #if 'BALL' in text or 'BSF' in text or 'ROLLING ELEMENT' in text:
+    #    fault_type = 'BALL'
+    if 'INNER' in text or 'BPFI' in text or 'IR' in text:
         fault_type = 'INNER_RACE'
     elif 'OUTER' in text or 'BPFO' in text or 'OR' in text:
         fault_type = 'OUTER_RACE'
@@ -276,12 +296,12 @@ def evaluate_single_harmonic_with_llm(b64_image, image_filename, numerical_conte
     Sends the specific generated harmonic plot to Gemma for diagnostic evaluation.
     """
     prompt_string = (
-        f"- If a massive peak perfectly aligns directly on top of the red dashed line: 1\n"
-        "- If the peak is misaligned, ambiguous, or just background noise: 0\n"
-        "- If there is NO peak, or the signal is totally flat at that marker: -1\n"
-        "CRITICAL RULE: Assume NO PEAK by default. Only award 1 if the alignment is exceptionally obvious and undeniable. You must penalize (-1) for missing peaks. Do NOT hallucinate data.\n"
+        f"- If a massive peak approximately aligns with the red dashed line: 1\n"
+        "- If the peak is clearly misaligned, ambiguous, or just background noise: 0\n"
+        #"- If there is NO peak, or the signal is totally flat near that marker: -1\n"
+        #"CRITICAL RULE: Assume NO PEAK by default. Only award 1 if the alignment is exceptionally obvious and undeniable. You must penalize (-1) for missing peaks. Do NOT hallucinate data.\n"
         "Output your final evaluation EXACTLY in this format on the very last line:\n"
-        "SCORE: [Score from -1 to 1]"
+        "SCORE: [Score from 0 to 1]"
     )
     
     print(f"========== SUPERVISION: DATA SENT TO AI ({phase_name} / {target_fault} / {harmonic}x) ==========")
@@ -321,12 +341,16 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, target_phase=Non
         df = pd.read_parquet(target_mat_file)
         #row = df.iloc[measurement_index]
         row = df.iloc[measurement_index]
-        df_filtered = df[(df["nominal_speed"] == 900)]
+        df_filtered = df[(df["nominal_speed"] == 1500)]
         row = df_filtered.iloc[0]
         sig_test = row['vibration']
         fs = 64000  # Paderborn dataset sampling frequency
+        downsample_factor = fs // 12000
+        sig_test = decimate(sig_test, q=downsample_factor, ftype='iir')
+        fs = fs // downsample_factor
         rpm = float(row['speed'].mean())
         theoretical_rpm = float(row['nominal_speed'])
+        sig_for_envelope = apply_bandpass(sig_test, fs, lowcut=2000, highcut=10000)
         basename = os.path.basename(target_mat_file).replace('.parquet', '')
         
         if location is None:
@@ -397,6 +421,7 @@ def run_full_diagnosis_pipeline(target_mat_file, location=None, target_phase=Non
     sig_test_sk, opt_fc_test, sk_path_test = run_spectral_kurtosis_and_filter(sig_test, fs, os.path.join(output_dir, "sk_test.png"))
     
     fault_order = [("BSF", "BALL"), ("BPFO", "OUTER_RACE"), ("BPFI", "INNER_RACE")]
+    fault_order = [("BPFO", "OUTER_RACE"), ("BPFI", "INNER_RACE")]
     
     def extract_confidence(diag_text):
         match = re.search(r"SCORE:\s*(-?\d+)", diag_text.upper())
